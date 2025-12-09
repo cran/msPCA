@@ -1,0 +1,7 @@
+useDynLib(msPCA)
+importFrom(Rcpp, evalCpp)
+export("mspca")
+export("tpw")
+export("print_mspca")
+export("orthogonality_violation")
+export("fraction_variance_explained")
