@@ -12,11 +12,12 @@
 #' @param ks A list of integers. Target sparsity of each PC.
 #' @param maxIter (optional) An integer. Maximum number of iterations of the algorithm. Default 200.
 #' @param verbose (optional) A Boolean. Controls console output. Default TRUE.
-#' @param violationTolerance (optional) A float. Tolerance for the violation of the orthogonality constraints. Default 1e-4
+#' @param feasibilityConstraintType (optional) An integer. Type of feasibility constraints to be enforced. 0: orthogonality constraints; 1: uncorrelatedness constraints. Default 0.
+#' @param feasibilityTolerance (optional) A float. Tolerance for the violation of the orthogonality constraints. Default 1e-4
 #' @param stallingTolerance (optional) A float. Controls the objective improvement below which the algorithm is considered to have stalled. Default 1e-8
 #' @param maxIterTPW (optional) An integer. Maximum number of iterations of the truncated power method (inner iteration). Default 200.
 #' @param  timeLimitTPW (optional) An integer. Maximum time in seconds for the truncated power method (inner iteration). Default 20.
-#' @return An object with 4 fields: `x_best` (p x r array containing the sparse PCs), `objective_value`, `orthogonality_violation`, `runtime`.
+#' @return An object with 4 fields: `x_best` (p x r array containing the sparse PCs), `objective_value`, `feasibility_violation`, `runtime`.
 #' @examples
 #' library(datasets)
 #' TestMat <- cor(datasets::mtcars)
@@ -97,6 +98,21 @@ orthogonality_violation <- function(U){
   sum(abs(t(U) %*% U - diag(dim(U)[2])))
 }
 
+
+#' Pairwise correlation
+#'
+#' Computes the pairwise correlations between PCs defined as \eqn{u_{t}^\top C u_{s}}.
+#' @param C A matrix. The correlation or covariance matrix (p x p).
+#' @param U A matrix. Each column correspond to an p-dimensional PC.
+#' @return A float matrix (r x r).
+#' @examples
+#' library(datasets)
+#' TestMat <- cor(datasets::mtcars)
+#' mspcares <- mspca(TestMat, 2, c(4,4))
+#' pairwise_correlation(TestMat, mspcares$x_best)
+pairwise_correlation <- function(C, U){
+  t(U) %*% C %*% U
+}
 #' Print mspca output
 #'
 #' Displays the output of the msPCA algorithm.
@@ -111,11 +127,10 @@ orthogonality_violation <- function(U){
 print_mspca <- function(sol_object, C){
   cat("\nmsPCA solution:\n")
   r <- dim(sol_object$x_best)[2] 
-  cat("\n")
   cat(paste(r,"sparse PCs",sep=" "), "\n")
   
   fve <- fraction_variance_explained_perPC(C, sol_object$x_best)
-  cat("Pct. of explained variance :", format(round(fve, 3)*100), "\n")
+  cat("Pct. of variance explained:", format(round(fve, 3)*100), "\n")
   
   v <- sol_object$x_best
   k <- 1:r
