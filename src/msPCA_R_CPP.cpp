@@ -70,20 +70,20 @@ Eigen::VectorXd iterativeTruncHeuristic(int k, const Eigen::VectorXd& beta0,
 
 // Inner routine: sPCA heuristic for a single PC — functor version.
 // outerIter gates the random restart budget: full budget on outer iteration 1,
-// restartsAfterFirstIter restarts on all subsequent iterations.
+// minRestartTPM restarts on all subsequent iterations.
 void singlePCHeuristic(int k,
                        const std::function<Eigen::VectorXd(const Eigen::VectorXd&)>& applyM,
                        int n,
                        const Eigen::VectorXd& beta0,
                        double& lambda_partial,
                        Eigen::VectorXd& x_output,
-                       int maxIterTPM = 10,
+                       int maxRestartTPM = 10,
                        int timeLimitTPM = 20)
 {
   Eigen::VectorXd bestBeta = iterativeTruncHeuristic(k, beta0, applyM);
   double bestObj = evaluateFunctor(bestBeta, applyM);
 
-  int countdown = maxIterTPM;
+  int countdown = maxRestartTPM;
   time_t start = time(0);
   while (countdown > 0 && difftime(time(0), start) < timeLimitTPM)
   {
@@ -98,7 +98,7 @@ void singlePCHeuristic(int k,
     {
       bestObj = obj;
       bestBeta = beta;
-      countdown = maxIterTPM;
+      countdown = maxRestartTPM;
     }
     countdown--;
   }
@@ -154,14 +154,14 @@ List iterativeDeflationHeuristic(
     Eigen::MatrixXd Sigma,
     int r,
     Rcpp::NumericVector ks, // size r
-    int maxIter = 200,
-    bool verbose = true,
     int feasibilityConstraintType = 0, // 0 = orthogonality constraints, 1 = uncorrelatedness constraints
+    bool verbose = true,
+    int maxIter = 200,
     double feasibilityTolerance = 1e-4,
     double stallingTolerance = 1e-8,
-    int maxIterTPM = 20,
     int timeLimitTPM = 20,
-    int restartsAfterFirstIter = 10) // random restart budget for outer iterations >= 2
+    int maxRestartTPM = 20,
+    int minRestartTPM = 10) // random restart budget for outer iterations >= 2
 {
   int n = Sigma.rows();
 
@@ -278,7 +278,7 @@ List iterativeDeflationHeuristic(
       }
 
       singlePCHeuristic(ks[t], applyM, n, beta0, lambda_partial, x_output,
-            (theIter == 1 ? maxIterTPM : restartsAfterFirstIter), timeLimitTPM);
+            (theIter == 1 ? maxRestartTPM : minRestartTPM), timeLimitTPM);
 
       x_current.col(t) = x_output;
 
@@ -297,11 +297,6 @@ List iterativeDeflationHeuristic(
 
     ofv_prev = ofv_overall;
     ofv_overall = evaluate(x_current, Sigma);
-
-    // if (theIter == 1) // TBD if needed or if initialization with -1e10 is enough
-    // {
-    //   ofv_prev = ofv_overall;
-    // }
 
     double violation = fnviolation(x_current, Sigma, feasibilityConstraintType);
     double violation_forStep = violation; // For the step size: if truncate values that are too small for numerical stability
@@ -371,13 +366,31 @@ List iterativeDeflationHeuristic(
   violation_best = fnviolation(x_best, Sigma, feasibilityConstraintType);
   if (violation_best > feasibilityTolerance) // Warning if the best solution found is not feasible (within tolerance)
   {
-    warning("Warning: Algorithm terminated without finding a feasible solution (within %i tolerance). Best solution found is %i feasible", feasibilityTolerance, violation_best);
+    warning("Warning: Algorithm terminated without finding a feasible solution (within %i tolerance). Best solution found is %i feasible. You may want to rerun the algorithm with more iterations (maxIter)", feasibilityTolerance, violation_best);
   }
   ofv_best = evaluate(x_best, Sigma);
+
+  // Sort columns of x_best by descending explained variance
+  //// Compute per-PC explained variance
+  Eigen::VectorXd fve(r);
+  for (int t = 0; t < r; ++t) {
+    fve(t) = x_best.col(t).dot(Sigma * x_best.col(t));
+  }
+
+  std::vector<int> order(r);
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(),
+            [&](int a, int b) { return fve(a) > fve(b); });
+
+  Eigen::MatrixXd x_sorted(n, r);
+  for (int j = 0; j < r; ++j) {
+    x_sorted.col(j) = x_best.col(order[j]);
+  }
+
   List result = List::create(Named("objective_value") = ofv_best,
                              Named("feasibility_violation") = violation_best,
                              Named("runtime") = runtime,
-                             Named("x_best") = x_best);
+                             Named("x_best") = x_sorted);
   return result;
 }
 
